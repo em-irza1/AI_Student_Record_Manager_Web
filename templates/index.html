@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Student Record Manager</title>
+  <style>
+    :root { --dark:#1B5E20; --green:#2E7D32; --pale:#E8F5E9; --line:#dce8dd; --ink:#203326; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Arial, sans-serif; background:#f5faf5; color:var(--ink); }
+    header { background:var(--dark); color:white; padding:26px 5%; }
+    header h1 { margin:0 0 7px; font-size:clamp(23px,4vw,32px); }
+    header p { margin:0; color:#e1f2e3; }
+    main { width:min(1200px,94%); margin:24px auto 50px; display:grid; gap:20px; }
+    .card { background:white; border:1px solid var(--line); border-radius:14px; padding:22px; box-shadow:0 4px 16px #183c2010; }
+    h2 { margin:0 0 18px; color:var(--dark); font-size:21px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+    label { display:block; font-size:13px; font-weight:700; margin-bottom:6px; }
+    input { width:100%; padding:11px 12px; border:1px solid #cbd9cc; border-radius:8px; font-size:14px; }
+    input:focus { outline:2px solid #a5d6a7; border-color:var(--green); }
+    .wide { grid-column:1/-1; }
+    .hint { font-size:12px; color:#66766a; margin:6px 0 0; }
+    .buttons { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
+    button { border:0; border-radius:8px; padding:10px 15px; background:var(--green); color:white; font-weight:700; cursor:pointer; }
+    button:hover { filter:brightness(.93); }
+    button.secondary { background:#e8f5e9; color:var(--dark); }
+    button.danger { background:#b3261e; }
+    button:disabled { opacity:.6; cursor:wait; }
+    #message { min-height:20px; margin-top:12px; font-size:14px; }
+    .success { color:#216b2b; } .error { color:#b3261e; }
+    .search-row { display:flex; gap:9px; margin-bottom:14px; }
+    .search-row input { flex:1; }
+    .table-wrap { overflow-x:auto; }
+    table { border-collapse:collapse; width:100%; min-width:850px; font-size:13px; }
+    th,td { padding:11px 10px; border-bottom:1px solid #e6eee7; text-align:left; vertical-align:top; }
+    th { background:var(--pale); color:var(--dark); }
+    tbody tr { cursor:pointer; } tbody tr:hover, tbody tr.selected { background:#f0f8f0; }
+    .empty { text-align:center; color:#738176; padding:22px; }
+    .ai-buttons { margin-bottom:14px; }
+    #aiResult { background:#f7fbf7; border:1px solid var(--line); border-radius:10px; padding:16px; min-height:100px; white-space:pre-wrap; line-height:1.6; overflow-wrap:anywhere; }
+    .muted { color:#6b786d; font-size:13px; }
+    @media(max-width:650px) { .form-grid { grid-template-columns:1fr; } .wide { grid-column:auto; } .card { padding:16px; } .search-row { flex-wrap:wrap; } .search-row input { flex-basis:100%; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>AI Student Record Manager</h1>
+  <p>Manage academic records, calculate results, and generate AI-powered study guidance.</p>
+</header>
+<main>
+  <section class="card">
+    <h2>Student Information</h2>
+    <form id="studentForm">
+      <div class="form-grid">
+        <div><label for="studentId">Student ID</label><input id="studentId" required placeholder="e.g. S101"></div>
+        <div><label for="studentName">Student Name</label><input id="studentName" required placeholder="Full name"></div>
+        <div class="wide"><label for="studentClass">Class / Semester</label><input id="studentClass" required placeholder="e.g. Semester 3"></div>
+        <div><label for="subjects">Subject Names</label><input id="subjects" required placeholder="Python, Mathematics, English"></div>
+        <div><label for="marks">Marks</label><input id="marks" required placeholder="88, 76, 92"><p class="hint">Enter marks in the same order as subjects. Each mark must be 0–100.</p></div>
+      </div>
+      <div class="buttons">
+        <button type="button" id="addBtn">Add</button>
+        <button type="button" id="updateBtn" class="secondary">Update Selected</button>
+        <button type="button" id="deleteBtn" class="danger">Delete Selected</button>
+        <button type="reset" class="secondary" id="clearBtn">Clear</button>
+      </div>
+      <div id="message" role="status"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Student Records</h2>
+    <div class="search-row">
+      <input id="searchInput" placeholder="Search by student name or ID">
+      <button id="searchBtn">Search</button>
+      <button id="showAllBtn" class="secondary">Show All</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Student ID</th><th>Name</th><th>Class / Semester</th><th>Subjects & Marks</th><th>Total</th><th>Average</th><th>Grade</th></tr></thead>
+        <tbody id="studentRows"><tr><td colspan="7" class="empty">Loading records...</td></tr></tbody>
+      </table>
+    </div>
+    <p class="muted">Select a row to load that student's details into the form and enable AI actions.</p>
+  </section>
+
+  <section class="card">
+    <h2>AI Performance Feedback & Results</h2>
+    <p class="muted" id="selectedLabel">Select a student record first.</p>
+    <div class="buttons ai-buttons">
+      <button id="analyzeBtn">Analyze Performance</button>
+      <button id="tipsBtn" class="secondary">Generate Study Tips</button>
+    </div>
+    <div id="aiResult" aria-live="polite">Your AI-generated feedback will appear here.</div>
+  </section>
+</main>
+<script>
+  let students = [];
+  let selectedId = null;
+  const $ = (id) => document.getElementById(id);
+
+  function showMessage(message, isError=false) {
+    $("message").textContent = message;
+    $("message").className = isError ? "error" : "success";
+  }
+  async function api(url, options={}) {
+    const response = await fetch(url, {
+      headers: {"Content-Type":"application/json"},
+      ...options
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Something went wrong.");
+    return data;
+  }
+  function formData() {
+    return {
+      id: $("studentId").value.trim(),
+      name: $("studentName").value.trim(),
+      class: $("studentClass").value.trim(),
+      subjects: $("subjects").value.split(",").map(x => x.trim()),
+      marks: $("marks").value.split(",").map(x => x.trim())
+    };
+  }
+  function fillForm(student) {
+    $("studentId").value = student.id;
+    $("studentId").readOnly = true;
+    $("studentName").value = student.name;
+    $("studentClass").value = student.class;
+    $("subjects").value = Object.keys(student.marks).join(", ");
+    $("marks").value = Object.values(student.marks).join(", ");
+    selectedId = student.id;
+    $("selectedLabel").textContent = `Selected student: ${student.name} (${student.id})`;
+    $("studentRows").querySelectorAll("tr").forEach(row => row.classList.toggle("selected", row.dataset.id === selectedId));
+  }
+  function clearForm() {
+    $("studentForm").reset();
+    $("studentId").readOnly = false;
+    selectedId = null;
+    $("selectedLabel").textContent = "Select a student record first.";
+    $("aiResult").textContent = "Your AI-generated feedback will appear here.";
+    $("studentRows").querySelectorAll("tr").forEach(row => row.classList.remove("selected"));
+  }
+  function renderRows(list) {
+    const body = $("studentRows");
+    body.innerHTML = "";
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">No student records found.</td></tr>';
+      return;
+    }
+    list.forEach(student => {
+      const row = document.createElement("tr");
+      row.dataset.id = student.id;
+      const values = [
+        student.id, student.name, student.class,
+        Object.entries(student.marks).map(([s,m]) => `${s}: ${m}`).join(" | "),
+        student.total, `${Number(student.average).toFixed(2)}%`, student.grade
+      ];
+      values.forEach(value => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+      row.addEventListener("click", () => fillForm(student));
+      if (student.id === selectedId) row.classList.add("selected");
+      body.appendChild(row);
+    });
+  }
+  async function loadStudents() {
+    try {
+      students = await api("/api/students");
+      renderRows(students);
+    } catch (error) {
+      $("studentRows").innerHTML = `<tr><td colspan="7" class="empty">${error.message}</td></tr>`;
+    }
+  }
+  $("addBtn").addEventListener("click", async () => {
+    try {
+      const result = await api("/api/students", {method:"POST", body:JSON.stringify(formData())});
+      showMessage(result.message);
+      clearForm(); await loadStudents();
+    } catch (error) { showMessage(error.message, true); }
+  });
+  $("updateBtn").addEventListener("click", async () => {
+    if (!selectedId) return showMessage("Select a student row before updating.", true);
+    try {
+      const data = formData(); delete data.id;
+      const result = await api(`/api/students/${encodeURIComponent(selectedId)}`, {method:"PUT", body:JSON.stringify(data)});
+      showMessage(result.message); await loadStudents();
+      const updated = students.find(s => s.id === selectedId); if (updated) fillForm(updated);
+    } catch (error) { showMessage(error.message, true); }
+  });
+  $("deleteBtn").addEventListener("click", async () => {
+    if (!selectedId) return showMessage("Select a student row before deleting.", true);
+    const student = students.find(s => s.id === selectedId);
+    if (!confirm(`Delete ${student ? student.name : selectedId}? This cannot be undone.`)) return;
+    try {
+      const result = await api(`/api/students/${encodeURIComponent(selectedId)}`, {method:"DELETE"});
+      showMessage(result.message); clearForm(); await loadStudents();
+    } catch (error) { showMessage(error.message, true); }
+  });
+  $("clearBtn").addEventListener("click", () => { setTimeout(() => { clearForm(); showMessage(""); }, 0); });
+  $("searchBtn").addEventListener("click", () => {
+    const query = $("searchInput").value.trim().toLowerCase();
+    renderRows(students.filter(s => s.id.toLowerCase().includes(query) || s.name.toLowerCase().includes(query)));
+  });
+  $("searchInput").addEventListener("keydown", event => { if (event.key === "Enter") $("searchBtn").click(); });
+  $("showAllBtn").addEventListener("click", () => { $("searchInput").value = ""; renderRows(students); });
+  async function runAI(kind, button) {
+    if (!selectedId) { $("aiResult").textContent = "Please select a student record first."; return; }
+    const original = button.textContent;
+    button.disabled = true; button.textContent = "Please wait...";
+    $("aiResult").textContent = "Generating an AI response with Groq. Please wait...";
+    try {
+      const result = await api(`/api/ai/${kind}/${encodeURIComponent(selectedId)}`, {method:"POST", body:"{}"});
+      $("aiResult").textContent = result.response;
+    } catch (error) {
+      $("aiResult").textContent = error.message;
+    } finally {
+      button.disabled = false; button.textContent = original;
+    }
+  }
+  $("analyzeBtn").addEventListener("click", event => runAI("analyze", event.currentTarget));
+  $("tipsBtn").addEventListener("click", event => runAI("tips", event.currentTarget));
+  loadStudents();
+</script>
+</body>
+</html>
